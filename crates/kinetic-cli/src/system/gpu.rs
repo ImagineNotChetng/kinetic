@@ -10,7 +10,7 @@ pub struct Gpu {
     pub memory_free: Option<u64>,
     /// Nominal memory bandwidth in bytes per second.
     pub bandwidth: Option<f64>,
-    /// Why Kinetic cannot use it, if it cannot.
+    /// Why Kinetic cannot use it and what to do, if it cannot.
     pub problem: Option<String>,
 }
 
@@ -92,7 +92,10 @@ fn vulkan() -> Result<Vec<Gpu>, String> {
                 memory_total: info.device_local_bytes,
                 memory_free: None,
                 bandwidth: None,
-                problem: info.missing(),
+                problem: info.missing().map(|why| match info.subgroups_too_wide() {
+                    true => format!("{why}; no driver changes that, so models run on the CPU"),
+                    false => format!("{why}; update its driver"),
+                }),
             }
         })
         .collect())

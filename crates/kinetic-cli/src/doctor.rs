@@ -88,10 +88,7 @@ pub fn run() -> Result<()> {
     }
     for g in &gpus {
         if let Some(problem) = &g.problem {
-            fixes.push(format!(
-                "{} through {}: {problem}; update its driver",
-                g.name, g.api
-            ));
+            fixes.push(format!("{} through {}: {problem}", g.name, g.api));
         }
         if let Some(free) = g.memory_free {
             if g.memory_total >= 4 << 30 && free < 1 << 30 {
