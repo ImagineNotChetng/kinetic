@@ -67,7 +67,16 @@ impl Gpu {
 }
 
 fn vulkan_error(e: kinetic_vulkan::Error) -> LoadError {
-    LoadError(format!("Vulkan: {e}"))
+    match e {
+        kinetic_vulkan::Error::Unsupported(ty) => {
+            let api = kinetic_vulkan::API;
+            LoadError(format!(
+                "{api} has no kernel for {ty}, a weight type this model uses; it runs on \
+                 the CPU (--device cpu), and K-quants such as Q4_K_M have {api} kernels"
+            ))
+        }
+        e => LoadError(format!("Vulkan: {e}")),
+    }
 }
 
 /// The Vulkan devices that can run models, discrete GPUs first.

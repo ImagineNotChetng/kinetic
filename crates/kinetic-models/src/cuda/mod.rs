@@ -230,7 +230,13 @@ struct Output {
 }
 
 fn cuda_error(e: kinetic_cuda::Error) -> LoadError {
-    LoadError(format!("CUDA: {e}"))
+    match e {
+        kinetic_cuda::Error::Unsupported(ty) => LoadError(format!(
+            "CUDA has no kernel for {ty}, a weight type this model uses; it runs on \
+             the CPU (--device cpu), and K-quants such as Q4_K_M have CUDA kernels"
+        )),
+        e => LoadError(format!("CUDA: {e}")),
+    }
 }
 
 impl<'m> CudaModel<'m> {
