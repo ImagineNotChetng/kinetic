@@ -23,6 +23,7 @@ mod receipt;
 mod render;
 mod sampler_args;
 mod sampling_command;
+mod signals;
 mod start;
 mod system;
 mod tech;
@@ -622,6 +623,7 @@ fn run(cli: Cli) -> Result<()> {
             api_key,
             runtime,
         } => {
+            signals::exit_on_stop();
             let port = port.unwrap_or(if ollama { 11434 } else { 8080 });
             let mut model = model.locate()?;
             if let Some(alias) = alias {
