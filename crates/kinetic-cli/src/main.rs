@@ -36,6 +36,7 @@ use std::process::ExitCode;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use kinetic_gguf::{Gguf, GgufFile, TensorSource};
 use kinetic_models::lora::{Adapted, Adapter};
+use kinetic_models::speculative::{find_companion, load_companion, CompanionDrafter};
 use kinetic_models::warm::{self, Warm};
 use kinetic_models::{Embedder, Model, RopeScaling, ScalingKind};
 use kinetic_server::{Backend, CpuBackend, Embeddings, Engine, Request, Sampling};
@@ -372,6 +373,11 @@ struct RuntimeArgs {
     /// Jinja chat template to use instead of the model's own
     #[arg(long, value_name = "FILE")]
     chat_template_file: Option<PathBuf>,
+    /// A DSpark drafter in GGUF, such as one of the `*-DSpark-GGUF` files
+    /// made for llama.cpp, to draft with next to RAD-1's own sources; CPU
+    /// only for now (--device cpu)
+    #[arg(long, value_name = "FILE")]
+    model_draft: Option<PathBuf>,
     /// LoRA adapters in GGUF to merge into the model, comma-separated;
     /// repeatable
     #[arg(long, value_name = "FILE", value_delimiter = ',')]
@@ -860,7 +866,26 @@ fn with_engine(
         Some(a) => a,
         None => file.source(),
     };
-    let model = kinetic_models::load_with(source, &scaling)?;
+    let mut model = kinetic_models::load_with(source, &scaling)?;
+    let drafter = match &runtime.model_draft {
+        Some(draft) => {
+            if runtime.device != Device::Cpu {
+                return Err(format!(
+                    "--model-draft {}: the drafter runs on the CPU only for now; add --device cpu",
+                    draft.display()
+                )
+                .into());
+            }
+            let found = find_companion(path, file.source().header(), Some(draft))?
+                .ok_or_else(|| format!("--model-draft {}: not found", draft.display()))?;
+            let drafter =
+                GgufFile::open(&found).map_err(|e| format!("{}: {e}", found.display()))?;
+            CompanionDrafter::new(load_companion(&drafter)?, &mut model)?;
+            Some(drafter)
+        }
+        None => None,
+    };
+    let model = model;
     if runtime.is_off(Tech::Shortlist) {
         model.disable_shortlist();
     }
@@ -890,7 +915,7 @@ fn with_engine(
         true => Some(1),
         false => parallel,
     };
-    let (placed, kind) = backend(&model, path, runtime, context, parallel)?;
+    let (placed, kind) = backend(&model, drafter.as_ref(), path, runtime, context, parallel)?;
     let Placed {
         mut backends,
         device,
@@ -993,6 +1018,7 @@ struct Placed<'a> {
 /// as memory allows, the device's description and its kind.
 fn backend<'a>(
     model: &'a Model<'a>,
+    drafter: Option<&'a GgufFile>,
     path: &Path,
     runtime: &RuntimeArgs,
     context: usize,
@@ -1006,13 +1032,22 @@ fn backend<'a>(
         return Ok(gpu);
     }
     let rad1 = !runtime.is_off(Tech::Rad1);
-    let new = || match rad1 {
-        true => CpuBackend::new(model),
-        false => CpuBackend::new(model).without_drafts(),
+    let new = || -> Result<CpuBackend<'a>> {
+        let mut cpu = CpuBackend::new(model);
+        if let Some(file) = drafter {
+            let mut d = CompanionDrafter::attach(load_companion(file)?, model)?;
+            // the backend's own lookup source covers what it would copy
+            d.lookup = None;
+            cpu = cpu.with_drafter(Box::new(d));
+        }
+        Ok(match rad1 {
+            true => cpu,
+            false => cpu.without_drafts(),
+        })
     };
     let cpu = match warm_cache(model, path, runtime, None) {
-        Some(w) => new().with_warm(w),
-        None => new(),
+        Some(w) => new()?.with_warm(w),
+        None => new()?,
     };
     let slots = parallel.unwrap_or_else(|| default_slots(model, context));
     // states grow as conversations do, so a context that cannot fit only fails much later
@@ -1025,7 +1060,9 @@ fn backend<'a>(
         );
     }
     let mut backends: Vec<Box<dyn Backend + 'a>> = vec![Box::new(cpu)];
-    backends.extend((1..slots).map(|_| Box::new(new()) as Box<dyn Backend>));
+    for _ in 1..slots {
+        backends.push(Box::new(new()?));
+    }
     let placed = Placed {
         backends,
         device: CPU.into(),

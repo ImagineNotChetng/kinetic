@@ -52,6 +52,12 @@ the rules in [Versioning](https://veloresearch.github.io/kinetic/versioning.html
 
 ### Models
 
+- DSpark drafters in llama.cpp's layout (architecture `dflash` with a
+  fusion layer, a Markov bias, an optional reduced vocabulary and
+  confidence head), such as the `LFM3-1.7B-DSpark-GGUF` files: on the CPU,
+  through `--model-draft` (`-md`), as one more RAD-1 source. Its drafts
+  match llama.cpp's for 807 of 819 tokens on LFM3-1.7B, the rest down to
+  Q8 rounding.
 - Gemma 4 (`gemma4`) on the CPU and CUDA, with images through its `gemma4v`
   projector.
 - LFM2.5 mixture of experts (`lfm2moe`), experimental, on the CPU and CUDA,

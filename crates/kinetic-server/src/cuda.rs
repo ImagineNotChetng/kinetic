@@ -25,7 +25,7 @@ use crate::sequence::{self, Run, Sequence};
 pub struct CudaBackend<'a> {
     gpu: Arc<CudaModel<'a>>,
     model: &'a Model<'a>,
-    decoder: Decoder<Ensemble<Source<CudaModel<'a>>>>,
+    decoder: Decoder<Ensemble<Source<'a, CudaModel<'a>>>>,
     cached: Option<Sequence<CudaState>>,
     /// The length `cached` had when it began to run ahead of a request.
     ahead: Option<usize>,
