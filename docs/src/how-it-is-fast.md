@@ -59,8 +59,11 @@ side and lets whichever has lately been right most propose the next draft:
   (`*-DSpark-GGUF`, architecture `dflash` with a fusion layer) draft a block
   of tokens from the target's hidden states at a few layers. Pass one with
   `--model-draft <file>`; it then competes with the sources above. It runs
-  on the CPU only for now (`--device cpu`), and a server that resumes a
-  cached prefix gives it only the tokens after the prefix.
+  on the CPU, or on a CUDA GPU when the whole model fits on one GPU. There
+  the block of a draft goes through the drafter's layers in one pass, each
+  row seeing the whole block, and the output head reads its weights once
+  for the block. A server that resumes a cached prefix gives it only the
+  tokens after the prefix.
 
 A draft can branch into a tree of alternatives, all checked in the same
 pass, with each row seeing only its own path (as in SpecInfer, Miao et al.,

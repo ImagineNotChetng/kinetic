@@ -34,35 +34,35 @@ const SKIPPED: &[&str] = &["context_length"];
 /// A DSpark drafter whose target features pass through one fusion layer,
 /// with weights borrowed from its file.
 pub struct FusedDspark<'a> {
-    d: usize,
-    eps: f32,
-    layers: Vec<Layer<'a>>,
-    target_layers: Vec<usize>,
+    pub(crate) d: usize,
+    pub(crate) eps: f32,
+    pub(crate) layers: Vec<Layer<'a>>,
+    pub(crate) target_layers: Vec<usize>,
     /// Concatenated target features to the drafter's width.
-    fc: Matrix<'a>,
-    fc_norm: Vec<f32>,
-    output_norm: Vec<f32>,
+    pub(crate) fc: Matrix<'a>,
+    pub(crate) fc_norm: Vec<f32>,
+    pub(crate) output_norm: Vec<f32>,
     /// The drafter's own output head over its reduced vocabulary, if any;
     /// without one it scores with the target's head.
-    output: Option<Matrix<'a>>,
+    pub(crate) output: Option<Matrix<'a>>,
     /// The target token of each row of the drafter's vocabulary.
-    d2t: Option<Vec<u32>>,
+    pub(crate) d2t: Option<Vec<u32>>,
     /// One row of `rank` values per target token.
-    markov_in: Matrix<'a>,
+    pub(crate) markov_in: Matrix<'a>,
     /// From the Markov state to a bias on each token of the drafter's
     /// vocabulary.
-    markov_out: Matrix<'a>,
-    rank: usize,
+    pub(crate) markov_out: Matrix<'a>,
+    pub(crate) rank: usize,
     /// Weights over the row's hidden state and its Markov state, and bias.
-    confidence: Option<(Vec<f32>, f32)>,
+    pub(crate) confidence: Option<(Vec<f32>, f32)>,
     /// Rows of the largest block it was trained on.
-    block: usize,
+    pub(crate) block: usize,
     /// Whether the anchor's row predicts the first token; otherwise the
     /// first mask row does.
-    from_anchor: bool,
-    mask_token: u32,
+    pub(crate) from_anchor: bool,
+    pub(crate) mask_token: u32,
     /// Tokens of the target's vocabulary.
-    vocab: usize,
+    pub(crate) vocab: usize,
 }
 
 impl<'a> FusedDspark<'a> {

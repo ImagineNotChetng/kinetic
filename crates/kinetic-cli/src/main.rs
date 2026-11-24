@@ -374,8 +374,8 @@ struct RuntimeArgs {
     #[arg(long, value_name = "FILE")]
     chat_template_file: Option<PathBuf>,
     /// A DSpark drafter in GGUF, such as one of the `*-DSpark-GGUF` files
-    /// made for llama.cpp, to draft with next to RAD-1's own sources; CPU
-    /// only for now (--device cpu)
+    /// made for llama.cpp, to draft with next to RAD-1's own sources, on the
+    /// CPU or on one CUDA GPU
     #[arg(long, value_name = "FILE")]
     model_draft: Option<PathBuf>,
     /// LoRA adapters in GGUF to merge into the model, comma-separated;
@@ -869,17 +869,11 @@ fn with_engine(
     let mut model = kinetic_models::load_with(source, &scaling)?;
     let drafter = match &runtime.model_draft {
         Some(draft) => {
-            if runtime.device != Device::Cpu {
-                return Err(format!(
-                    "--model-draft {}: the drafter runs on the CPU only for now; add --device cpu",
-                    draft.display()
-                )
-                .into());
-            }
             let found = find_companion(path, file.source().header(), Some(draft))?
                 .ok_or_else(|| format!("--model-draft {}: not found", draft.display()))?;
             let drafter =
                 GgufFile::open(&found).map_err(|e| format!("{}: {e}", found.display()))?;
+            // on the CPU now; a GPU backend sets the taps of its own copy
             CompanionDrafter::new(load_companion(&drafter)?, &mut model)?;
             Some(drafter)
         }
@@ -1025,7 +1019,7 @@ fn backend<'a>(
     parallel: Option<usize>,
 ) -> Result<(Placed<'a>, Device)> {
     let picked = gpu::pick(runtime.device, |kind| match kind {
-        Device::Cuda => cuda_backend(model, path, runtime, context, parallel),
+        Device::Cuda => cuda_backend(model, drafter, path, runtime, context, parallel),
         _ => vulkan_backend(model, path, runtime, context),
     })?;
     if let Some(gpu) = picked {
@@ -1074,6 +1068,7 @@ fn backend<'a>(
 #[cfg(feature = "cuda")]
 fn cuda_backend<'a>(
     model: &'a Model<'a>,
+    drafter: Option<&'a GgufFile>,
     path: &Path,
     runtime: &RuntimeArgs,
     context: usize,
@@ -1091,6 +1086,23 @@ fn cuda_backend<'a>(
         Ok(gpu) if runtime.is_off(Tech::Rad1) => gpu.without_drafts(),
         Ok(gpu) => gpu,
         Err(e) => return Some(Err(e)),
+    };
+    // before without_drafts would matter: RAD-1 off means no drafts at all
+    let gpu = match drafter {
+        Some(file) if !runtime.is_off(Tech::Rad1) => {
+            let dspark = match kinetic_models::FusedDspark::load(file) {
+                Ok(d) => d,
+                Err(e) => {
+                    let e = format!("--model-draft: only a DSpark drafter runs on CUDA: {e}");
+                    return Some(Err(kinetic_models::LoadError(e)));
+                }
+            };
+            match gpu.with_dspark(dspark) {
+                Ok(gpu) => gpu,
+                Err(e) => return Some(Err(e)),
+            }
+        }
+        _ => gpu,
     };
     let name = gpu.device().to_owned();
     let mut slots: Vec<Box<dyn Backend + 'a>> = Vec::new();
@@ -1119,6 +1131,7 @@ fn cuda_backend<'a>(
 #[cfg(not(feature = "cuda"))]
 fn cuda_backend<'a>(
     _model: &'a Model<'a>,
+    _drafter: Option<&'a GgufFile>,
     _path: &Path,
     _runtime: &RuntimeArgs,
     _context: usize,
